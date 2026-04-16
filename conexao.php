@@ -40,4 +40,3 @@ register_shutdown_function(function() use ($conn) {
         $conn->close();
     }
 });
-?>

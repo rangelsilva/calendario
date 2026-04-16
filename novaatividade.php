@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 /**
  * ═══════════════════════════════════════════════════════
  * PASCOM — Activity Creation (v2.0)
@@ -19,6 +19,7 @@ $selectedActivities = normalizeEventActivityCatalogIds($_POST['atividades_evento
 
 // 1. Handle Form Submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    require_csrf_token();
     $data = sanitize_post($_POST);
     
     if (empty($data['nome']) || empty($data['data_inicio'])) {
@@ -95,8 +96,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 // 2. Fetch Helper Data
-$locais = $conn->query("SELECT id, nome_local FROM locais_paroquia WHERE paroquia_id = $pid ORDER BY nome_local");
-$tipos  = $conn->query("SELECT id, nome_tipo FROM tipos_atividade WHERE paroquia_id = $pid ORDER BY nome_tipo");
+$locais = db_query($conn, "SELECT id, nome_local FROM locais_paroquia WHERE paroquia_id = ? ORDER BY nome_local", [$pid]);
+$tipos  = db_query($conn, "SELECT id, nome_tipo FROM tipos_atividade WHERE paroquia_id = ? ORDER BY nome_tipo", [$pid]);
 $activityOptionMap = [];
 foreach ($catalogoAtividades as $catalogoItem) {
     $activityOptionMap[] = [
@@ -216,6 +217,7 @@ if (!$selectedActivities) {
                 <?php endif; ?>
 
                 <form method="POST" class="glass glass-form">
+                    <input type="hidden" name="csrf_token" value="<?= csrf_token() ?>">
                     <div class="form-grid">
                         <div class="form-group full-width">
                             <label>Identificação do Evento</label>

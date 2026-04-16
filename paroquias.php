@@ -16,40 +16,37 @@ if ($_SESSION['usuario_id'] != 1) {
 $msg = '';
 $error = '';
 
-/** Handle Delete */
-if (isset($_GET['delete'])) {
-    $id = (int)$_GET['delete'];
-    
-    // Check if there are users using this parish 
-    // Usually handled by FK or we set null, but let's delete
-    $oldResult = $conn->query("SELECT * FROM paroquias WHERE id = $id");
-    if ($oldResult && $oldResult->num_rows > 0) {
-        $oldState = $oldResult->fetch_assoc();
-        $conn->query("DELETE FROM paroquias WHERE id = $id");
-        
-        $img_path = __DIR__ . '/img/paroquia_' . $id . '.png';
-        if (file_exists($img_path)) unlink($img_path);
-        
-        logAction($conn, 'EXCLUIR_PAROQUIA', 'paroquias', $id, ['antigo' => $oldState]);
-        header('Location: paroquias.php?msg=Contexto removido');
-        exit();
-    }
-}
 
 /** Handle Form Submission */
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $id = (int)($_POST['id'] ?? 0);
-    $nome = trim($_POST['nome'] ?? '');
+    require_csrf_token();
+    $action = $_POST['action'] ?? 'save';
+    
+    if ($action === 'delete') {
+        $id = (int)$_POST['id'];
+        $oldResult = db_query($conn, "SELECT * FROM paroquias WHERE id = ?", [$id]);
+        if ($oldResult && $oldResult->num_rows > 0) {
+            $oldState = $oldResult->fetch_assoc();
+            db_execute($conn, "DELETE FROM paroquias WHERE id = ?", [$id]);
+            
+            $img_path = __DIR__ . '/img/paroquia_' . $id . '.png';
+            if (file_exists($img_path)) unlink($img_path);
+            
+            logAction($conn, 'EXCLUIR_PAROQUIA', 'paroquias', $id, ['antigo' => $oldState]);
+            header('Location: paroquias.php?msg=Contexto removido');
+            exit();
+        }
+    } else {
+        $id = (int)($_POST['id'] ?? 0);
+        $nome = trim($_POST['nome'] ?? '');
     
     if ($nome) {
         if ($id > 0) {
             // Update
-            $oldRes = $conn->query("SELECT * FROM paroquias WHERE id = $id");
-            $oldData = $oldRes->fetch_assoc();
+            $oldRes = db_query($conn, "SELECT * FROM paroquias WHERE id = ?", [$id]);
+            $oldData = $oldRes ? $oldRes->fetch_assoc() : [];
             
-            $stmt = $conn->prepare('UPDATE paroquias SET nome = ? WHERE id = ?');
-            $stmt->bind_param('si', $nome, $id);
-            if ($stmt->execute()) {
+            if (db_execute($conn, 'UPDATE paroquias SET nome = ? WHERE id = ?', [$nome, $id])) {
                 logAction($conn, 'EDITAR_PAROQUIA', 'paroquias', $id, ['antigo' => $oldData, 'novo' => ['nome' => $nome]]);
                 $msg = 'Contexto salvo.';
             } else {
@@ -58,9 +55,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $target_id = $id;
         } else {
             // Insert
-            $stmt = $conn->prepare('INSERT INTO paroquias (nome) VALUES (?)');
-            $stmt->bind_param('s', $nome);
-            if ($stmt->execute()) {
+            if (db_execute($conn, 'INSERT INTO paroquias (nome) VALUES (?)', [$nome])) {
                 $target_id = $conn->insert_id;
                 logAction($conn, 'CRIAR_PAROQUIA', 'paroquias', $target_id, ['novo' => $nome]);
                 
@@ -92,9 +87,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
         $error = 'O nome da paróquia/sede é obrigatório.';
     }
+    }
 }
 
-$res = $conn->query('SELECT p.*, (SELECT COUNT(id) FROM usuarios u WHERE u.paroquia_id = p.id) as totais FROM paroquias p ORDER BY p.nome');
+$res = db_query($conn, 'SELECT p.*, (SELECT COUNT(id) FROM usuarios u WHERE u.paroquia_id = p.id) as totais FROM paroquias p ORDER BY p.nome');
 ?>
 <!DOCTYPE html>
 <html lang="pt-BR">
@@ -224,7 +220,12 @@ $res = $conn->query('SELECT p.*, (SELECT COUNT(id) FROM usuarios u WHERE u.paroq
 
                     <div style="display: flex; flex-direction: column; gap: 0.5rem; flex-shrink: 0;">
                         <button onclick="editPq(<?= htmlspecialchars(json_encode($row), ENT_QUOTES, 'UTF-8') ?>)" class="btn btn-ghost" style="padding: 0.6rem;">Editar</button>
-                        <a href="?delete=<?= $row['id'] ?>" onclick="return confirmLink(this, 'ATENÇÃO! Excluir este contexto paroquial afeta todos os usuários e lógicas associadas a ele. Deseja prosseguir?')" class="btn" style="padding: 0.6rem; color: #ef4444; font-size: 0.75rem; border: 1px solid rgba(239, 68, 68, 0.3);">Excluir</a>
+                        <form method="POST" style="margin:0; width: 100%;">
+                            <input type="hidden" name="csrf_token" value="<?= csrf_token() ?>">
+                            <input type="hidden" name="action" value="delete">
+                            <input type="hidden" name="id" value="<?= $row['id'] ?>">
+                            <button type="button" class="btn" style="padding: 0.6rem; color: #ef4444; font-size: 0.75rem; border: 1px solid rgba(239, 68, 68, 0.3); width: 100%; text-align: center;" onclick="return confirmForm(this, 'ATENÇÃO! Excluir este contexto paroquial afeta todos os usuários e lógicas associadas a ele. Deseja prosseguir?')">Excluir</button>
+                        </form>
                     </div>
                 </div>
                 <?php endwhile; ?>
@@ -244,6 +245,8 @@ $res = $conn->query('SELECT p.*, (SELECT COUNT(id) FROM usuarios u WHERE u.paroq
 
             
             <form method="POST" action="" enctype="multipart/form-data">
+                <input type="hidden" name="csrf_token" value="<?= csrf_token() ?>">
+                <input type="hidden" name="action" value="save">
                 <input type="hidden" name="id" id="paroquiaId">
                 <div class="modal-body">
                     <div class="form-group">

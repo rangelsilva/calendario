@@ -18,6 +18,7 @@ function is_local_icon_path(string $value): bool {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    require_csrf_token();
     $action = $_POST['action'] ?? '';
     $data = sanitize_post($_POST);
 
@@ -64,10 +65,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 if ($action === 'create') {
                     $sql = "INSERT INTO tipos_atividade (paroquia_id, nome_tipo, icone) VALUES (?, ?, ?)";
-                    $stmt = $conn->prepare($sql);
-                    $stmt->bind_param('iss', $pid, $data['nome_tipo'], $iconValue);
-
-                    if ($stmt->execute()) {
+                    if (db_execute($conn, $sql, [$pid, $data['nome_tipo'], $iconValue])) {
                         logAction($conn, 'CRIAR_TIPO', 'tipos_atividade', $conn->insert_id, $data['nome_tipo']);
                         header('Location: tipos_atividade.php?msg=Categoria criada!');
                         exit();
@@ -75,10 +73,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 } else {
                     $id = (int)$data['id'];
                     $sql = "UPDATE tipos_atividade SET nome_tipo = ?, icone = ? WHERE id = ? AND paroquia_id = ?";
-                    $stmt = $conn->prepare($sql);
-                    $stmt->bind_param('ssii', $data['nome_tipo'], $iconValue, $id, $pid);
-
-                    if ($stmt->execute()) {
+                    if (db_execute($conn, $sql, [$data['nome_tipo'], $iconValue, $id, $pid])) {
                         logAction($conn, 'EDITAR_TIPO', 'tipos_atividade', $id, $data['nome_tipo']);
                         header('Location: tipos_atividade.php?msg=Categoria atualizada!');
                         exit();
@@ -89,14 +84,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif ($action === 'delete') {
         $id = (int)($_POST['id'] ?? 0);
 
-        $existingStmt = $conn->prepare('SELECT icone FROM tipos_atividade WHERE id = ? AND paroquia_id = ? LIMIT 1');
-        $existingStmt->bind_param('ii', $id, $pid);
-        $existingStmt->execute();
-        $existingIcon = (string)($existingStmt->get_result()->fetch_assoc()['icone'] ?? '');
+        $existingRes = db_query($conn, 'SELECT icone FROM tipos_atividade WHERE id = ? AND paroquia_id = ? LIMIT 1', [$id, $pid]);
+        $existingIcon = (string)(($existingRes ? $existingRes->fetch_assoc()['icone'] : null) ?? '');
 
-        $stmt = $conn->prepare('DELETE FROM tipos_atividade WHERE id = ? AND paroquia_id = ?');
-        $stmt->bind_param('ii', $id, $pid);
-        if ($stmt->execute()) {
+        if (db_execute($conn, 'DELETE FROM tipos_atividade WHERE id = ? AND paroquia_id = ?', [$id, $pid])) {
             if (is_local_icon_path($existingIcon)) {
                 $oldPath = __DIR__ . '/' . $existingIcon;
                 if (is_file($oldPath)) {
@@ -110,7 +101,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-$tipos = $conn->query("SELECT * FROM tipos_atividade WHERE paroquia_id = $pid ORDER BY nome_tipo");
+$tipos = db_query($conn, "SELECT * FROM tipos_atividade WHERE paroquia_id = ? ORDER BY nome_tipo", [$pid]);
 ?>
 <!DOCTYPE html>
 <html lang="pt-BR">
@@ -227,6 +218,7 @@ $tipos = $conn->query("SELECT * FROM tipos_atividade WHERE paroquia_id = $pid OR
                     <div class="type-actions">
                         <button onclick='editType(<?= json_encode($t, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>)' class="btn btn-ghost" style="flex: 1; font-size: 0.8rem;">Editar</button>
                         <form method="POST" style="flex: 1;">
+                            <input type="hidden" name="csrf_token" value="<?= csrf_token() ?>">
                             <input type="hidden" name="action" value="delete">
                             <input type="hidden" name="id" value="<?= $t['id'] ?>">
                             <button type="button" class="btn btn-ghost" style="width: 100%; color: #ef4444; font-size: 0.8rem;" onclick="return confirmForm(this, 'Remover esta categoria?')">Remover</button>
@@ -240,6 +232,7 @@ $tipos = $conn->query("SELECT * FROM tipos_atividade WHERE paroquia_id = $pid OR
 
     <div id="typeModal" class="modal" onclick="if(event.target.id==='typeModal'){closeModal();}">
         <form method="POST" enctype="multipart/form-data" class="glass modal-card">
+            <input type="hidden" name="csrf_token" value="<?= csrf_token() ?>">
             <input type="hidden" name="action" id="modalAction" value="create">
             <input type="hidden" name="id" id="typeId">
             <input type="hidden" name="existing_icone" id="existingIconValue" value="">

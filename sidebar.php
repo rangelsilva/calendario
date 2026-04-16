@@ -172,7 +172,8 @@ function is_active(string $page): string {
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" x2="8" y1="13" y2="13"/><line x1="16" x2="8" y1="17" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
                 <span>Logs do Sistema</span>
             </a>
-            <a href="/calender/documentos.php" class="<?= is_active('documentos.php') ?>">
+            <a href="documentos.php" class="<?= is_active('documentos.php') ?>">
+
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7z"/><path d="M14 2v5h5"/><path d="M9 13h6"/><path d="M9 17h6"/></svg>
                 <span>Relatórios</span>
             </a>
@@ -379,6 +380,26 @@ body {
     .sidebar-mini .sidebar .nav-group { align-items: center; display: flex; flex-direction: column; gap: 0.5rem; padding: 0; width: 100%; }
     .sidebar-mini .sidebar .nav-label { display: none; }
     .sidebar-mini .sidebar .sidebar-nav { padding: 1rem 0; }
+/* ── Premium UI Elements ───────────────────────────── */
+.premium-toast {
+    position: fixed; top: 20px; left: 50%; transform: translateX(-50%) translateY(-20px);
+    background: rgba(15, 23, 42, 0.95); backdrop-filter: blur(12px); border: 1px solid var(--border);
+    border-radius: 100px; padding: 0.75rem 1.25rem; display: flex; align-items: center; gap: 0.75rem;
+    color: #fff; font-size: 0.85rem; font-weight: 700; box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+    z-index: 10000; opacity: 0; transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    pointer-events: none;
+}
+.premium-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+.premium-toast.toast-success { border-bottom: 2px solid #22c55e; }
+.premium-toast.toast-error { border-bottom: 2px solid #ef4444; }
+.spinner-icon {
+    animation: rotate 2s linear infinite; width: 18px; height: 18px; display: inline-block; vertical-align: middle;
+}
+.spinner-icon .path {
+    stroke: currentColor; stroke-linecap: round; animation: dash 1.5s ease-in-out infinite;
+}
+@keyframes rotate { 100% { transform: rotate(360deg); } }
+@keyframes dash { 0% { stroke-dasharray: 1, 150; stroke-dashoffset: 0; } 50% { stroke-dasharray: 90, 150; stroke-dashoffset: -35; } 100% { stroke-dasharray: 90, 150; stroke-dashoffset: -124; } }
 }
 </style>
 
@@ -468,8 +489,63 @@ function confirmLink(element, message, btnLabel = 'Continuar', btnColor = '#22c5
     openConfirmModal(message, function() {
         if (_globalConfirmLink) window.location.href = _globalConfirmLink;
     }, btnLabel, btnColor);
-    return false;
+// ── Premium UI Skeletons & Toasts ─────────────────────────────
+function showToast(message, type = 'info') {
+    const toast = document.createElement('div');
+    toast.className = `premium-toast toast-${type}`;
+    // Simple icon match
+    let icon = '';
+    if(type === 'success') icon = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
+    else if(type === 'error') icon = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>`;
+
+    toast.innerHTML = `<span class="toast-icon">${icon}</span><span class="toast-msg">${message}</span>`;
+    document.body.appendChild(toast);
+    
+    requestAnimationFrame(() => {
+        toast.classList.add('show');
+        setTimeout(() => {
+            toast.classList.remove('show');
+            setTimeout(() => toast.remove(), 300);
+        }, 3000);
+    });
 }
+
+// Intercept All Forms for Disable on Submit
+document.addEventListener('submit', (e) => {
+    const form = e.target;
+    if (form.classList.contains('no-loader')) return;
+    
+    // Only capture default forms, not specific AJAX ones (though standard fetch prevents default anyway)
+    if (!e.defaultPrevented) {
+        const submitBtn = form.querySelector('button[type="submit"]:not(.no-spin)');
+        if (submitBtn) {
+            if (submitBtn.dataset.loading) {
+                e.preventDefault();
+                return;
+            }
+            submitBtn.dataset.loading = "true";
+            const originalText = submitBtn.innerHTML;
+            submitBtn.dataset.ogText = originalText;
+            submitBtn.innerHTML = `<svg class="spinner-icon" viewBox="0 0 50 50"><circle class="path" cx="25" cy="25" r="20" fill="none" stroke-width="5"></circle></svg> Processando...`;
+            submitBtn.style.opacity = '0.7';
+            submitBtn.style.pointerEvents = 'none';
+        }
+    }
+});
+
+// Auto-parse ?msg= or Error from URL to Native Toast
+window.addEventListener('DOMContentLoaded', () => {
+    const urlParams = new URLSearchParams(window.location.search);
+    if(urlParams.has('msg')) {
+        showToast(urlParams.get('msg'), 'success');
+        // Clean URL softly
+        window.history.replaceState({}, document.title, window.location.pathname);
+    }
+    if(urlParams.has('error')) {
+        showToast(urlParams.get('error'), 'error');
+        window.history.replaceState({}, document.title, window.location.pathname);
+    }
+});
 </script>
 
 <div id="globalConfirmModal" class="modal" style="z-index: 9999;">

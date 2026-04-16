@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 /**
  * ═══════════════════════════════════════════════════════
  * PASCOM — Activity Detail View (v2.0)
@@ -242,13 +242,14 @@ $eventItems = getEventActivityItems($conn, $id, (int)($_SESSION['usuario_id'] ??
             <?php if (empty($eventItems) && canInteractWithActivity()): ?>
                 <?php 
                 $userId = (int)($_SESSION['usuario_id'] ?? 0);
-                $isEnrolledMain = (bool)$conn->query("SELECT id FROM inscricoes WHERE atividade_id = $id AND usuario_id = $userId LIMIT 1")->num_rows;
+                $isEnrolledMain = (bool)db_fetch_one($conn, "SELECT id FROM inscricoes WHERE atividade_id = ? AND usuario_id = ? LIMIT 1", [$id, $userId]);
                 ?>
                 <section class="glass event-items-board animate-in" style="animation-delay: 0.15s; text-align: center; margin-top: -1.5rem;">
                     <h3 style="font-size: 0.75rem; font-weight: 800; text-transform: uppercase; color: var(--text-ghost); letter-spacing: 0.1em; margin-bottom: 1.5rem;">Inscrição neste Evento</h3>
                     <div style="padding: 1rem; background: var(--panel-hi); border-radius: 16px; border: 1px solid var(--border);">
                         <?php if (!$isEnrolledMain): ?>
                             <form method="POST" action="inscrever.php" style="margin: 0;">
+<input type="hidden" name="csrf_token" value="<?= csrf_token() ?>">
                                 <input type="hidden" name="id" value="<?= $id ?>">
                                 <input type="hidden" name="action" value="join">
                                 <button type="submit" class="btn btn-primary shimmer" style="padding: 1rem 3rem;">Inscrever-me no Evento</button>
@@ -258,6 +259,7 @@ $eventItems = getEventActivityItems($conn, $id, (int)($_SESSION['usuario_id'] ??
                                 <div style="color: var(--primary); font-weight: 800;">✓ Você já está inscrito neste evento!</div>
                                 <?php if (activityStartTimestamp($activity) - 86400 >= time() || canBypassEnrollmentDeadline()): ?>
                                     <form method="POST" action="inscrever.php" style="margin: 0;">
+<input type="hidden" name="csrf_token" value="<?= csrf_token() ?>">
                                         <input type="hidden" name="id" value="<?= $id ?>">
                                         <input type="hidden" name="action" value="leave">
                                         <button type="submit" class="btn btn-ghost">Cancelar minha Inscrição</button>
@@ -283,6 +285,7 @@ $eventItems = getEventActivityItems($conn, $id, (int)($_SESSION['usuario_id'] ??
                             <?php if (canInteractWithActivity()): ?>
                                 <?php if (!$item['usuario_inscrito']): ?>
                                     <form method="POST" action="inscrever.php" style="margin: 0;">
+<input type="hidden" name="csrf_token" value="<?= csrf_token() ?>">
                                         <input type="hidden" name="id" value="<?= $id ?>">
                                         <input type="hidden" name="item_id" value="<?= (int)$item['id'] ?>">
                                         <input type="hidden" name="action" value="join">
@@ -290,6 +293,7 @@ $eventItems = getEventActivityItems($conn, $id, (int)($_SESSION['usuario_id'] ??
                                     </form>
                                 <?php elseif (activityStartTimestamp($activity) - 86400 >= time() || canBypassEnrollmentDeadline()): ?>
                                     <form method="POST" action="inscrever.php" style="margin: 0;">
+<input type="hidden" name="csrf_token" value="<?= csrf_token() ?>">
                                         <input type="hidden" name="id" value="<?= $id ?>">
                                         <input type="hidden" name="item_id" value="<?= (int)$item['id'] ?>">
                                         <input type="hidden" name="action" value="leave">

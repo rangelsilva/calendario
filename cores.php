@@ -55,7 +55,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
 
                 // Também atualiza id_imagem em paroquias (se necessário pelo DB original)
-                $conn->query("UPDATE paroquias SET id_imagem = (SELECT id FROM logo_paroquias WHERE paroquia_id=$paroquia_id LIMIT 1) WHERE id=$paroquia_id");
+                db_execute($conn, "UPDATE paroquias SET id_imagem = (SELECT id FROM logo_paroquias WHERE paroquia_id = ? LIMIT 1) WHERE id = ?", [$paroquia_id, $paroquia_id]);
             }
         }
     }

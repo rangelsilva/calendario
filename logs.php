@@ -60,7 +60,10 @@ $logs = $stmt->get_result();
 ?>
 <?php
 // Autocomplete data for filters
-$usuarios_list = $conn->query("SELECT DISTINCT nome FROM usuarios WHERE paroquia_id = $pid ORDER BY nome");
+$stmtUsers = $conn->prepare("SELECT DISTINCT nome FROM usuarios WHERE paroquia_id = ? ORDER BY nome");
+$stmtUsers->bind_param('i', $pid);
+$stmtUsers->execute();
+$usuarios_list = $stmtUsers->get_result();
 $tabelas_list = $conn->query("SELECT DISTINCT tabela_afetada FROM log_alteracoes ORDER BY tabela_afetada");
 ?>
 <!DOCTYPE html>

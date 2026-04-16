@@ -1,0 +1,12 @@
+.git/
+.env*
+vendor/
+docker-compose.yml
+Dockerfile
+README.md
+docs/
+scratch/
+sql/
+*.log
+.phpunit.cache/
+docker-compose.override.yml

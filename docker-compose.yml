@@ -1,0 +1,59 @@
+services:
+  app:
+    build: 
+      context: .
+      target: dev
+    ports:
+      - "8080:8080"
+    volumes:
+      - .:/var/www/html:delegated           # Bind montável para o código, permite Live Reload rápido
+      - upload-data:/var/www/html/img       # Volume persistente para uploads
+    environment:
+      - DB_HOST=db
+      - DB_USER=${MYSQL_USER}
+      - DB_PASS=${MYSQL_PASSWORD}
+      - DB_NAME=${MYSQL_DATABASE}
+    depends_on:
+      db:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - pascom-net
+
+  db:
+    image: mariadb@sha256:9e5adc545e5960584b1e2b83d9af284129f8c990d399ef70645d47641fa5a59b
+    # Execução protegida (UID/GID = 999:999, que é o default mysql do mariadb)
+    user: "999:999"
+    volumes:
+      - db-data:/var/lib/mysql
+      # Bind de um schema opcional para bootstrapping:
+      - ./sql/db_init:/docker-entrypoint-initdb.d:ro
+    # Memória no cache na temp filesystem ao invés de disco (performance/segurança)
+    tmpfs:
+      - /tmp
+      - /run/mysqld
+    environment:
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+      - MYSQL_DATABASE=${MYSQL_DATABASE}
+      - MYSQL_USER=${MYSQL_USER}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+      - TZ=America/Sao_Paulo
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - pascom-net
+
+volumes:
+  db-data:
+  upload-data:
+
+networks:
+  pascom-net:
+    driver: bridge

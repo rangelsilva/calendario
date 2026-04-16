@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 require_once 'functions.php';
 
 if (is_authenticated()) {
@@ -10,13 +10,14 @@ $msg = $_GET['msg'] ?? '';
 $error = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    ensureUserPhotoColumn($conn);
-    ensureUserLastLoginColumn($conn);
+    $csrf = $_POST['csrf_token'] ?? '';
+    if (!verify_csrf_token($csrf)) {
+        $error = 'Sessão inválida ou expirada. Por favor, recarregue a página.';
+    } else {
+        $email = trim($_POST['email'] ?? '');
+        $senha = $_POST['senha'] ?? '';
 
-    $email = trim($_POST['email'] ?? '');
-    $senha = $_POST['senha'] ?? '';
-
-    if ($email && $senha) {
+        if ($email && $senha) {
         $throttleKey = authThrottleKey('login', $email);
         $throttle = authThrottleState($conn, 'login', $throttleKey, 3);
 
@@ -71,8 +72,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
         }
-    } else {
-        $error = 'Por favor, preencha todos os campos obrigatorios.';
+        } else {
+            $error = 'Por favor, preencha todos os campos obrigatorios.';
+        }
     }
 }
 ?>
@@ -82,8 +84,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width,initial-scale=1.0">
     <title>Acessar Portal — PASCOM</title>
-    <link rel="stylesheet" href="style.css?v=2.4.5"
+    <link rel="stylesheet" href="style.css?v=2.4.5">
         <link rel="stylesheet" href="css/responsive.css?v=2.4.5">
+
     <style>
         body { background: #000; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 2rem; }
         .login-gate { width: 100%; max-width: 1000px; display: grid; grid-template-columns: 1fr 1fr; gap: 4rem; align-items: center; }
@@ -137,6 +140,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <?php endif; ?>
 
             <form method="POST" style="display: grid; gap: 1.8rem;">
+                <input type="hidden" name="csrf_token" value="<?= csrf_token() ?>">
                 <div class="field">
                     <label>E-MAIL INSTITUCIONAL</label>
                     <input type="email" name="email" placeholder="nome@exemplo.com" required autofocus autocomplete="username">

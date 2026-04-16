@@ -17,6 +17,7 @@ $error = $_GET['error'] ?? '';
 
 // 1. Handle CRUD Actions
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    require_csrf_token();
     $action = $_POST['action'] ?? '';
     $data = sanitize_post($_POST);
     
@@ -26,11 +27,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             if ($action === 'create') {
                 $sql = "INSERT INTO locais_paroquia (paroquia_id, nome_local, endereco, telefone, responsavel, capacidade) VALUES (?, ?, ?, ?, ?, ?)";
-                $stmt = $conn->prepare($sql);
                 $cap = (int)($data['capacidade'] ?? 0);
-                $stmt->bind_param('issssi', $pid, $data['nome_local'], $data['endereco'], $data['telefone'], $data['responsavel'], $cap);
-                
-                if ($stmt->execute()) {
+                if (db_execute($conn, $sql, [$pid, $data['nome_local'], $data['endereco'], $data['telefone'], $data['responsavel'], $cap])) {
                     logAction($conn, 'CRIAR_LOCAL', 'locais_paroquia', $conn->insert_id, ['novo' => $data]);
                     header("Location: locais_paroquia.php?msg=Local criado com sucesso!");
                     exit();
@@ -39,15 +37,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $id = (int)$data['id'];
                 
                 // Get old state for logging
-                $oldResult = $conn->query("SELECT * FROM locais_paroquia WHERE id = $id AND paroquia_id = $pid");
-                $oldState = $oldResult->fetch_assoc();
+                $oldResult = db_query($conn, "SELECT * FROM locais_paroquia WHERE id = ? AND paroquia_id = ?", [$id, $pid]);
+                $oldState = $oldResult ? $oldResult->fetch_assoc() : [];
 
                 $sql = "UPDATE locais_paroquia SET nome_local = ?, endereco = ?, telefone = ?, responsavel = ?, capacidade = ? WHERE id = ? AND paroquia_id = ?";
-                $stmt = $conn->prepare($sql);
                 $cap = (int)($data['capacidade'] ?? 0);
-                $stmt->bind_param('ssssiii', $data['nome_local'], $data['endereco'], $data['telefone'], $data['responsavel'], $cap, $id, $pid);
                 
-                if ($stmt->execute()) {
+                if (db_execute($conn, $sql, [$data['nome_local'], $data['endereco'], $data['telefone'], $data['responsavel'], $cap, $id, $pid])) {
                     logAction($conn, 'EDITAR_LOCAL', 'locais_paroquia', $id, ['antigo' => $oldState, 'novo' => $data]);
                     header("Location: locais_paroquia.php?msg=Local atualizado com sucesso!");
                     exit();
@@ -58,12 +54,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $id = (int)$_POST['id'];
         
         // Get old state for logging
-        $oldResult = $conn->query("SELECT * FROM locais_paroquia WHERE id = $id AND paroquia_id = $pid");
-        $oldState = $oldResult->fetch_assoc();
+        $oldResult = db_query($conn, "SELECT * FROM locais_paroquia WHERE id = ? AND paroquia_id = ?", [$id, $pid]);
+        $oldState = $oldResult ? $oldResult->fetch_assoc() : [];
 
-        $stmt = $conn->prepare("DELETE FROM locais_paroquia WHERE id = ? AND paroquia_id = ?");
-        $stmt->bind_param('ii', $id, $pid);
-        if ($stmt->execute()) {
+        if (db_execute($conn, "DELETE FROM locais_paroquia WHERE id = ? AND paroquia_id = ?", [$id, $pid])) {
             logAction($conn, 'EXCLUIR_LOCAL', 'locais_paroquia', $id, ['antigo' => $oldState]);
             header("Location: locais_paroquia.php?msg=Local excluído permanentemente.");
             exit();
@@ -72,7 +66,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 // 2. Fetch Locations
-$locais = $conn->query("SELECT * FROM locais_paroquia WHERE paroquia_id = $pid ORDER BY nome_local");
+$locais = db_query($conn, "SELECT * FROM locais_paroquia WHERE paroquia_id = ? ORDER BY nome_local", [$pid]);
 ?>
 <!DOCTYPE html>
 <html lang="pt-BR">
@@ -208,6 +202,7 @@ $locais = $conn->query("SELECT * FROM locais_paroquia WHERE paroquia_id = $pid O
                     <div class="loc-footer">
                         <button onclick='editLocal(<?= json_encode($l) ?>)' class="btn btn-ghost" style="flex: 1;">Editar</button>
                         <form method="POST" style="flex: 1;">
+                            <input type="hidden" name="csrf_token" value="<?= csrf_token() ?>">
                             <input type="hidden" name="action" value="delete">
                             <input type="hidden" name="id" value="<?= $l['id'] ?>">
                             <button type="button" class="btn btn-ghost" style="width: 100%; color: #ef4444;" onclick="return confirmForm(this, 'Excluir este local permanentemente?')">Excluir</button>
@@ -222,6 +217,7 @@ $locais = $conn->query("SELECT * FROM locais_paroquia WHERE paroquia_id = $pid O
     <!-- Modal Form -->
     <div id="locModal" class="modal">
         <form method="POST" class="glass modal-card">
+            <input type="hidden" name="csrf_token" value="<?= csrf_token() ?>">
             <input type="hidden" name="action" id="modalAction" value="create">
             <input type="hidden" name="id" id="locId">
             

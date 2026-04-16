@@ -7,15 +7,66 @@ Thumbs.db
 *.cache
 *.tmp
 
-# Uploads temporarios
+# ── SEGURANÇA: Arquivos com credenciais ────────────────────────────────────────
+# Variacoes de arquivos de conexao/config com senhas hardcoded.
+# NUNCA commitar estes arquivos. Usar variaveis de ambiente.
+conexao*.php
+config.local.php
+.env
+.env.*
+!.env.example
+
+# ── SEGURANÇA: Dumps e backups de banco ───────────────────────────────────────
+# Backups locais nao devem estar no repositorio.
+sql/backups/
+*.sql
+!sql/db_init/*.sql
+!sql/*.sql.example
+
+# ── Cookies e tokens de sessao de debug ───────────────────────────────────────
+_cookie*.txt
+*.cookie
+
+# ── Scripts de debug / teste / rascunho ───────────────────────────────────────
+# Estes arquivos sao rascunhos locais e nao fazem parte da aplicacao.
+test_*.php
+check*.php
+check_*.php
+
+# ── Scripts de migration ad-hoc (usar CLI de migrations em vez disso) ─────────
+patch_*.php
+fix_*.php
+migrate_*.php
+seed*.php
+alter_db.php
+sync_db.php
+update_*.php
+restore_*.php
+criar_tabela*.php
+dump.php
+
+# ── Notas e anotacoes internas ────────────────────────────────────────────────
+anotações*.txt
+anotacoes*.txt
+notas*.txt
+
+# ── Diretorio de rascunhos ────────────────────────────────────────────────────
+scratch/
+
+# ── Uploads temporarios ───────────────────────────────────────────────────────
 img/*.tmp
 img/usuarios/
 img/tipos_atividade/
 
 # Editor
 .vscode/
+!.vscode/settings.json
 .idea/
 
 # PHPUnit / Composer
 vendor/
 composer.lock
+
+# Docker
+.phpunit.cache/
+docker-compose.override.yml

@@ -21,6 +21,16 @@ $isAjax = (
     (isset($_SERVER['HTTP_ACCEPT']) && str_contains($_SERVER['HTTP_ACCEPT'], 'application/json'))
 );
 
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    if ($isAjax) {
+        json_response(false, 'Apenas requisições POST seguras são permitidas.');
+    }
+    header('Location: index.php?error=invalid_request_method');
+    exit();
+}
+
+require_csrf_token();
+
 if ($aid <= 0 || !in_array($action, ['join', 'leave'], true)) {
     if ($isAjax) {
         json_response(false, 'Requisição inválida.');

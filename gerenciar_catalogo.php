@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 /**
  * ═══════════════════════════════════════════════════════
  * PASCOM — Catálogo de Atividades Manager (v2.0)
@@ -22,6 +22,7 @@ $error = $_GET['error'] ?? '';
 
 // ── Handle POST ──
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    require_csrf_token();
     $action = $_POST['action'] ?? '';
     $data = sanitize_post($_POST);
 
@@ -32,15 +33,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($nome === '') {
             $error = 'O nome da atividade é obrigatório.';
         } else {
-            $check = $conn->prepare("SELECT id FROM atividades_catalogo WHERE paroquia_id = ? AND nome = ?");
-            $check->bind_param('is', $pid, $nome);
-            $check->execute();
-            if ($check->get_result()->fetch_assoc()) {
+            $check = db_query($conn, "SELECT id FROM atividades_catalogo WHERE paroquia_id = ? AND nome = ?", [$pid, $nome]);
+            if ($check && $check->fetch_assoc()) {
                 $error = 'Já existe uma atividade com esse nome.';
             } else {
-                $stmt = $conn->prepare("INSERT INTO atividades_catalogo (paroquia_id, nome, descricao, ativo) VALUES (?, ?, ?, 1)");
-                $stmt->bind_param('iss', $pid, $nome, $descricao);
-                if ($stmt->execute()) {
+                if (db_execute($conn, "INSERT INTO atividades_catalogo (paroquia_id, nome, descricao, ativo) VALUES (?, ?, ?, 1)", [$pid, $nome, $descricao])) {
                     logAction($conn, 'CRIAR_CATALOGO', 'atividades_catalogo', $conn->insert_id, $nome);
                     header('Location: gerenciar_catalogo.php?msg=' . urlencode('Atividade "' . $nome . '" cadastrada!'));
                     exit();
@@ -57,15 +54,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($nome === '' || $id <= 0) {
             $error = 'Dados inválidos.';
         } else {
-            $dup = $conn->prepare("SELECT id FROM atividades_catalogo WHERE paroquia_id = ? AND nome = ? AND id != ?");
-            $dup->bind_param('isi', $pid, $nome, $id);
-            $dup->execute();
-            if ($dup->get_result()->fetch_assoc()) {
+            $dup = db_query($conn, "SELECT id FROM atividades_catalogo WHERE paroquia_id = ? AND nome = ? AND id != ?", [$pid, $nome, $id]);
+            if ($dup && $dup->fetch_assoc()) {
                 $error = 'Já existe outra atividade com esse nome.';
             } else {
-                $stmt = $conn->prepare("UPDATE atividades_catalogo SET nome = ?, descricao = ? WHERE id = ? AND paroquia_id = ?");
-                $stmt->bind_param('ssii', $nome, $descricao, $id, $pid);
-                if ($stmt->execute()) {
+                if (db_execute($conn, "UPDATE atividades_catalogo SET nome = ?, descricao = ? WHERE id = ? AND paroquia_id = ?", [$nome, $descricao, $id, $pid])) {
                     logAction($conn, 'EDITAR_CATALOGO', 'atividades_catalogo', $id, $nome);
                     header('Location: gerenciar_catalogo.php?msg=' . urlencode('Atividade atualizada!'));
                     exit();
@@ -78,16 +71,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $id = (int)($data['id'] ?? 0);
         if ($id > 0) {
             // Check if used in any event
-            $usageCheck = $conn->prepare("SELECT COUNT(*) as total FROM atividade_evento_itens WHERE atividade_catalogo_id = ?");
-            $usageCheck->bind_param('i', $id);
-            $usageCheck->execute();
-            $usage = $usageCheck->get_result()->fetch_assoc();
+            $usageCheck = db_query($conn, "SELECT COUNT(*) as total FROM atividade_evento_itens WHERE atividade_catalogo_id = ?", [$id]);
+            $usage = $usageCheck ? $usageCheck->fetch_assoc() : null;
 
             if ((int)($usage['total'] ?? 0) > 0) {
                 // Soft-delete: deactivate instead
-                $stmt = $conn->prepare("UPDATE atividades_catalogo SET ativo = 0 WHERE id = ? AND paroquia_id = ?");
-                $stmt->bind_param('ii', $id, $pid);
-                if ($stmt->execute()) {
+                if (db_execute($conn, "UPDATE atividades_catalogo SET ativo = 0 WHERE id = ? AND paroquia_id = ?", [$id, $pid])) {
                     logAction($conn, 'DESATIVAR_CATALOGO', 'atividades_catalogo', $id);
                     header('Location: gerenciar_catalogo.php?msg=' . urlencode('Atividade desativada (vinculada a eventos existentes).'));
                     exit();
@@ -95,9 +84,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $error = 'Erro ao desativar: ' . $conn->error;
                 }
             } else {
-                $stmt = $conn->prepare("DELETE FROM atividades_catalogo WHERE id = ? AND paroquia_id = ?");
-                $stmt->bind_param('ii', $id, $pid);
-                if ($stmt->execute()) {
+                if (db_execute($conn, "DELETE FROM atividades_catalogo WHERE id = ? AND paroquia_id = ?", [$id, $pid])) {
                     logAction($conn, 'EXCLUIR_CATALOGO', 'atividades_catalogo', $id);
                     header('Location: gerenciar_catalogo.php?msg=' . urlencode('Atividade removida!'));
                     exit();
@@ -109,9 +96,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif ($action === 'reactivate') {
         $id = (int)($data['id'] ?? 0);
         if ($id > 0) {
-            $stmt = $conn->prepare("UPDATE atividades_catalogo SET ativo = 1 WHERE id = ? AND paroquia_id = ?");
-            $stmt->bind_param('ii', $id, $pid);
-            $stmt->execute();
+            db_execute($conn, "UPDATE atividades_catalogo SET ativo = 1 WHERE id = ? AND paroquia_id = ?", [$id, $pid]);
             logAction($conn, 'REATIVAR_CATALOGO', 'atividades_catalogo', $id);
             header('Location: gerenciar_catalogo.php?msg=' . urlencode('Atividade reativada!'));
             exit();
@@ -119,9 +104,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif ($action === 'deactivate') {
         $id = (int)($data['id'] ?? 0);
         if ($id > 0) {
-            $stmt = $conn->prepare("UPDATE atividades_catalogo SET ativo = 0 WHERE id = ? AND paroquia_id = ?");
-            $stmt->bind_param('ii', $id, $pid);
-            $stmt->execute();
+            db_execute($conn, "UPDATE atividades_catalogo SET ativo = 0 WHERE id = ? AND paroquia_id = ?", [$id, $pid]);
             logAction($conn, 'DESATIVAR_CATALOGO', 'atividades_catalogo', $id);
             header('Location: gerenciar_catalogo.php?msg=' . urlencode('Atividade desativada!'));
             exit();
@@ -130,7 +113,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 // ── Fetch Data ──
-$items = $conn->query("SELECT * FROM atividades_catalogo WHERE paroquia_id = $pid ORDER BY ativo DESC, nome ASC");
+$items = db_query($conn, "SELECT * FROM atividades_catalogo WHERE paroquia_id = ? ORDER BY ativo DESC, nome ASC", [$pid]);
 ?>
 <!DOCTYPE html>
 <html lang="pt-BR">
@@ -287,6 +270,7 @@ $items = $conn->query("SELECT * FROM atividades_catalogo WHERE paroquia_id = $pi
                             </button>
                             <?php if ($item['ativo']): ?>
                             <form method="POST" style="flex: 1; margin: 0;">
+                                <input type="hidden" name="csrf_token" value="<?= csrf_token() ?>">
                                 <input type="hidden" name="action" value="deactivate">
                                 <input type="hidden" name="id" value="<?= $item['id'] ?>">
                                 <button type="button" class="btn btn-ghost" style="width: 100%; color: #eab308; font-size: 0.75rem; border-color: rgba(234, 179, 8, 0.2); cursor: pointer;" onclick="return confirmForm(this, 'Desativar temporariamente esta atividade?')">
@@ -295,6 +279,7 @@ $items = $conn->query("SELECT * FROM atividades_catalogo WHERE paroquia_id = $pi
                             </form>
                             <?php else: ?>
                             <form method="POST" style="flex: 1; margin: 0;">
+                                <input type="hidden" name="csrf_token" value="<?= csrf_token() ?>">
                                 <input type="hidden" name="action" value="reactivate">
                                 <input type="hidden" name="id" value="<?= $item['id'] ?>">
                                 <button type="button" class="btn btn-ghost" style="width: 100%; color: #22c55e; font-size: 0.75rem; border-color: rgba(34, 197, 94, 0.2); cursor: pointer;" onclick="return confirmForm(this, 'Reativar esta atividade?')">
@@ -320,6 +305,7 @@ $items = $conn->query("SELECT * FROM atividades_catalogo WHERE paroquia_id = $pi
 
     <div id="catalogModal" class="modal" onclick="if(event.target.id==='catalogModal'){closeModal();}">
         <form method="POST" action="gerenciar_catalogo.php" class="glass modal-card">
+            <input type="hidden" name="csrf_token" value="<?= csrf_token() ?>">
             <input type="hidden" name="action" id="modalAction" value="create">
             <input type="hidden" name="id" id="itemId">
 
@@ -344,6 +330,7 @@ $items = $conn->query("SELECT * FROM atividades_catalogo WHERE paroquia_id = $pi
 
     <div id="deleteModal" class="modal" onclick="if(event.target.id==='deleteModal'){closeDeleteModal();}">
         <form method="POST" action="gerenciar_catalogo.php" class="glass modal-card">
+            <input type="hidden" name="csrf_token" value="<?= csrf_token() ?>">
             <input type="hidden" name="action" value="delete">
             <input type="hidden" name="id" id="deleteItemId">
 

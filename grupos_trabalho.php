@@ -23,6 +23,7 @@ $error = $_GET['error'] ?? '';
 
 // 1. Handle CRUD Actions
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    require_csrf_token();
     $action = $_POST['action'] ?? '';
     $data = sanitize_post($_POST);
     
@@ -32,12 +33,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             if ($action === 'create') {
                 $sql = "INSERT INTO grupos_trabalho (paroquia_id, nome, descricao, cor, visivel, ativo) VALUES (?, ?, ?, ?, ?, ?)";
-                $stmt = $conn->prepare($sql);
                 $visivel = isset($_POST['visivel']) ? 1 : 0;
                 $ativo = isset($_POST['ativo']) ? 1 : 0;
-                $stmt->bind_param('isssii', $pid, $data['nome'], $data['descricao'], $data['cor'], $visivel, $ativo);
                 
-                if ($stmt->execute()) {
+                if (db_execute($conn, $sql, [$pid, $data['nome'], $data['descricao'], $data['cor'], $visivel, $ativo])) {
                     $newId = $conn->insert_id;
                     logAction($conn, 'CRIAR_GRUPO', 'grupos_trabalho', $newId, ['novo' => $data]);
                     
@@ -46,7 +45,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     
                     // AUTO-JOIN: Add master admin (ID 1) to the newly created group
                     if ($my_user_id !== 1) {
-                        $conn->query("INSERT IGNORE INTO usuario_grupos (usuario_id, grupo_id, paroquia_id) VALUES (1, $newId, $pid)");
+                        db_execute($conn, "INSERT IGNORE INTO usuario_grupos (usuario_id, grupo_id, paroquia_id) VALUES (1, ?, ?)", [$newId, $pid]);
                     }
                     
                     header("Location: grupos_trabalho.php?msg=Grupo criado com sucesso e voce foi adicionado como membro!");
@@ -56,16 +55,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $id = (int)$data['id'];
                 
                 // Get old state for logging
-                $oldResult = $conn->query("SELECT * FROM grupos_trabalho WHERE id = $id AND paroquia_id = $pid");
-                $oldState = $oldResult->fetch_assoc();
+                $oldResult = db_query($conn, "SELECT * FROM grupos_trabalho WHERE id = ? AND paroquia_id = ?", [$id, $pid]);
+                $oldState = $oldResult ? $oldResult->fetch_assoc() : [];
 
                 $sql = "UPDATE grupos_trabalho SET nome = ?, descricao = ?, cor = ?, visivel = ?, ativo = ? WHERE id = ? AND paroquia_id = ?";
-                $stmt = $conn->prepare($sql);
                 $visivel = isset($_POST['visivel']) ? 1 : 0;
                 $ativo = isset($_POST['ativo']) ? 1 : 0;
-                $stmt->bind_param('sssiiii', $data['nome'], $data['descricao'], $data['cor'], $visivel, $ativo, $id, $pid);
                 
-                if ($stmt->execute()) {
+                if (db_execute($conn, $sql, [$data['nome'], $data['descricao'], $data['cor'], $visivel, $ativo, $id, $pid])) {
                     logAction($conn, 'EDITAR_GRUPO', 'grupos_trabalho', $id, ['antigo' => $oldState, 'novo' => $data]);
                     header("Location: grupos_trabalho.php?msg=Grupo atualizado com sucesso!");
                     exit();
@@ -76,8 +73,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $id = (int)$_POST['id'];
         
         // Safety: check if it's the 'Todos' group
-        $check = $conn->query("SELECT nome FROM grupos_trabalho WHERE id = $id");
-        $g = $check->fetch_assoc();
+        $check = db_query($conn, "SELECT nome FROM grupos_trabalho WHERE id = ?", [$id]);
+        $g = $check ? $check->fetch_assoc() : null;
         if ($g && $g['nome'] === 'Todos') {
             $error = "O grupo padrão 'Todos' não pode ser excluído.";
         } else {
@@ -103,9 +100,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($blockedByHierarchy) {
                 $error = 'Nao e possivel excluir: existe usuario do mesmo nivel ou superior neste grupo.';
             } else {
-                $stmt = $conn->prepare("DELETE FROM grupos_trabalho WHERE id = ? AND paroquia_id = ?");
-                $stmt->bind_param('ii', $id, $pid);
-                if ($stmt->execute()) {
+                if (db_execute($conn, "DELETE FROM grupos_trabalho WHERE id = ? AND paroquia_id = ?", [$id, $pid])) {
                     logAction($conn, 'EXCLUIR_GRUPO', 'grupos_trabalho', $id);
                     header("Location: grupos_trabalho.php?msg=Grupo excluído com sucesso.");
                     exit();
@@ -117,15 +112,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 // 2. Fetch Groups (Filtered by scope)
 if ($is_master_global) {
-    $sqlGroups = "SELECT g.*, (SELECT COUNT(*) FROM usuario_grupos WHERE grupo_id = g.id) as total_membros FROM grupos_trabalho g WHERE g.paroquia_id = $pid ORDER BY g.nome ASC";
+    $sqlGroups = "SELECT g.*, (SELECT COUNT(*) FROM usuario_grupos WHERE grupo_id = g.id) as total_membros FROM grupos_trabalho g WHERE g.paroquia_id = ? ORDER BY g.nome ASC";
+    $grupos = db_query($conn, $sqlGroups, [$pid]);
 } else {
     // If not master, only see groups I am in
     $sqlGroups = "SELECT g.*, (SELECT COUNT(*) FROM usuario_grupos WHERE grupo_id = g.id) as total_membros 
                   FROM grupos_trabalho g 
-                  INNER JOIN usuario_grupos ug ON ug.grupo_id = g.id AND ug.usuario_id = $my_user_id
-                  WHERE g.paroquia_id = $pid AND g.ativo = 1 ORDER BY g.nome ASC";
+                  INNER JOIN usuario_grupos ug ON ug.grupo_id = g.id AND ug.usuario_id = ?
+                  WHERE g.paroquia_id = ? AND g.ativo = 1 ORDER BY g.nome ASC";
+    $grupos = db_query($conn, $sqlGroups, [$my_user_id, $pid]);
 }
-$grupos = $conn->query($sqlGroups);
 ?>
 <!DOCTYPE html>
 <html lang="pt-BR">
@@ -275,6 +271,7 @@ $grupos = $conn->query($sqlGroups);
                         <button onclick='editGroup(<?= json_encode($g) ?>)' class="btn btn-ghost" style="flex: 1;">Configurar</button>
                         <?php if ($g['nome'] !== 'Todos'): ?>
                         <form method="POST" style="flex: 1;">
+                            <input type="hidden" name="csrf_token" value="<?= csrf_token() ?>">
                             <input type="hidden" name="action" value="delete">
                             <input type="hidden" name="id" value="<?= $g['id'] ?>">
                             <button type="button" class="btn btn-ghost" style="width: 100%; color: #ef4444;" onclick="return confirmForm(this, 'Remover este grupo permanentemente?')">Excluir</button>
@@ -290,6 +287,7 @@ $grupos = $conn->query($sqlGroups);
     <!-- Modal Form -->
     <div id="groupModal" class="modal">
         <form method="POST" class="glass modal-card">
+            <input type="hidden" name="csrf_token" value="<?= csrf_token() ?>">
             <input type="hidden" name="action" id="modalAction" value="create">
             <input type="hidden" name="id" id="groupId">
             

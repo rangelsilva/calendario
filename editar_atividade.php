@@ -46,6 +46,7 @@ $eventGroups = getActivityGroups($conn, $id);
 
 // 2. Handle Update Submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    require_csrf_token();
     $data = sanitize_post($_POST);
     
     if (empty($data['nome']) || empty($data['data_inicio'])) {
@@ -97,8 +98,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 // 3. Fetch Helper Data
-$locais = $conn->query("SELECT id, nome_local FROM locais_paroquia WHERE paroquia_id = $pid ORDER BY nome_local");
-$tipos  = $conn->query("SELECT id, nome_tipo FROM tipos_atividade WHERE paroquia_id = $pid ORDER BY nome_tipo");
+$locais = db_query($conn, "SELECT id, nome_local FROM locais_paroquia WHERE paroquia_id = ? ORDER BY nome_local", [$pid]);
+$tipos  = db_query($conn, "SELECT id, nome_tipo FROM tipos_atividade WHERE paroquia_id = ? ORDER BY nome_tipo", [$pid]);
 $catalogoAtividades = getEventActivityCatalog($conn, $pid);
 $activityOptionMap = [];
 foreach ($catalogoAtividades as $catalogoItem) {
@@ -213,6 +214,7 @@ if (!$selectedActivities) {
                 <?php endif; ?>
 
                 <form method="POST" class="glass glass-form">
+                    <input type="hidden" name="csrf_token" value="<?= csrf_token() ?>">
                     <div class="form-grid">
                         <div class="form-group full-width">
                             <label>Identificação do Evento</label>
@@ -331,7 +333,15 @@ if (!$selectedActivities) {
                         <div class="form-actions full-width">
                             <button type="submit" class="btn btn-primary shimmer">Salvar Alterações</button>
                             <a href="index.php" class="btn btn-ghost">Cancelar</a>
-                            <a href="excluir_atividade.php?id=<?= $id ?>" class="btn btn-ghost" style="color: #ef4444; border-color: rgba(239, 68, 68, 0.2);" onclick="return confirmLink(this, 'Tem certeza que deseja excluir permanentemente este evento?')">Excluir</a>
+                            <form method="POST" action="excluir_atividade.php" style="display:inline;">
+                                <input type="hidden" name="csrf_token" value="<?= csrf_token() ?>">
+                                <input type="hidden" name="id" value="<?= $id ?>">
+                                <button type="submit" class="btn btn-ghost" style="color: #ef4444; border-color: rgba(239, 68, 68, 0.2);"
+                                    onclick="return confirmForm(this, 'Tem certeza que deseja excluir permanentemente este evento?')"
+                                    data-btn-label="Excluir" data-btn-color="#ef4444">
+                                    Excluir
+                                </button>
+                            </form>
                         </div>
                     </div>
                 </form>

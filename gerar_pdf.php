@@ -13,12 +13,15 @@ if (!has_level(1)) {
     die('Acesso negado.');
 }
 
-// 1. Check FPDF Library
-$fpdf_path = 'libs/fpdf/fpdf.php';
-if (!file_exists($fpdf_path)) {
-    die("<b>Erro Crítico:</b> A biblioteca FPDF não foi encontrada. <br>Por favor, instale em: $fpdf_path");
+// 1. Check FPDF Library via Composer Autoloader
+if (!class_exists('FPDF')) {
+    // Tenta carregar o autoloader caso nao tenha sido carregado
+    if (file_exists(__DIR__ . '/vendor/autoload.php')) {
+        require_once __DIR__ . '/vendor/autoload.php';
+    } else {
+        die("<b>Erro Crítico:</b> O autoloader do Composer não foi encontrado. Rode 'composer install'.");
+    }
 }
-require($fpdf_path);
 
 // 2. Report Parameters
 $year = (int)($_GET['year'] ?? date('Y'));

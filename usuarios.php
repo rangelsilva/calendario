@@ -27,9 +27,10 @@ if ($todos_group_id > 0) {
 }
 
 // 1. Handle Status Toggles (AJAX/Simple POST)
-if (isset($_GET['toggle_status']) && $can_edit) {
-    $uid = (int)$_GET['toggle_status'];
-    $checkStmt = $conn->prepare("SELECT * FROM usuarios WHERE id = ? LIMIT 1");
+if (isset($_POST['toggle_status']) && $can_edit) {
+    require_csrf_token();
+    $uid = (int)$_POST['toggle_status'];
+    $checkStmt = $conn->prepare("SELECT id, paroquia_id, nivel_acesso, ativo FROM usuarios WHERE id = ? LIMIT 1");
     $checkStmt->bind_param('i', $uid);
     $checkStmt->execute();
     $oldState = $checkStmt->get_result()->fetch_assoc();
@@ -82,9 +83,9 @@ if (isset($_GET['toggle_status']) && $can_edit) {
         }
     }
     
-    $conn->query("UPDATE usuarios SET ativo = 1 - ativo WHERE id = $uid");
+    db_query($conn, "UPDATE usuarios SET ativo = 1 - ativo WHERE id = ?", [$uid]);
     
-    $newResult = $conn->query("SELECT * FROM usuarios WHERE id = $uid");
+    $newResult = db_query($conn, "SELECT * FROM usuarios WHERE id = ?", [$uid]);
     $newState = $newResult->fetch_assoc();
     
     logAction($conn, 'ALTERAR_STATUS_USUARIO', 'usuarios', $uid, ['antigo' => $oldState, 'novo' => $newState]);
@@ -152,11 +153,31 @@ $sql = "
     LEFT JOIN paroquias p ON u.paroquia_id = p.id
 ";
 
+// Paginação (SPEC-09)
+$itemsPerPage = 12;
+$page = max(1, (int)($_GET['page'] ?? 1));
+$offset = ($page - 1) * $itemsPerPage;
+
+// COUNT total queries
+$sqlCount = "SELECT COUNT(*) as total FROM usuarios u LEFT JOIN paroquias p ON u.paroquia_id = p.id";
+if ($where) {
+    $sqlCount .= " WHERE " . implode(" AND ", $where);
+}
+$stmtCount = $conn->prepare($sqlCount);
+if ($params) {
+    $stmtCount->bind_param($types, ...$params);
+}
+$stmtCount->execute();
+$totalItems = (int)$stmtCount->get_result()->fetch_assoc()['total'];
+$totalPages = max(1, ceil($totalItems / $itemsPerPage));
+
 if ($where) {
     $sql .= " WHERE " . implode(" AND ", $where);
 }
-
-$sql .= " ORDER BY u.nome ASC";
+$sql .= " ORDER BY u.nome ASC LIMIT ? OFFSET ?";
+$types .= "ii";
+$params[] = $itemsPerPage;
+$params[] = $offset;
 
 $stmt = $conn->prepare($sql);
 if ($params) {
@@ -171,8 +192,9 @@ $users = $stmt->get_result();
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width,initial-scale=1.0">
     <title>Gestão de Usuários — PASCOM</title>
-    <link rel="stylesheet" href="style.css?v=2.4.5"
+    <link rel="stylesheet" href="style.css?v=2.4.5">
         <link rel="stylesheet" href="css/responsive.css?v=2.4.5">
+
     <style>
         .app-shell { display: flex; min-height: 100vh; }
         .main-content { flex: 1; margin-left: var(--sidebar-w); padding: 3rem; transition: margin 0.3s; }
@@ -212,6 +234,20 @@ $users = $stmt->get_result();
             .main-content { padding: 1.5rem; }
             .header-flex { flex-direction: column; align-items: flex-start; gap: 1.5rem; }
         }
+
+        /* Paginação */
+        .pagination { display: flex; gap: 0.4rem; justify-content: center; margin-top: 3rem; flex-wrap: wrap; }
+        .page-item {
+            width: 40px; height: 40px; border-radius: 12px;
+            display: flex; align-items: center; justify-content: center;
+            background: var(--panel); border: 1px solid var(--border);
+            font-size: 0.9rem; font-weight: 800; color: var(--text-dim);
+            transition: all var(--anim); cursor: pointer; text-decoration: none;
+        }
+        .page-item.active { background: var(--primary); color: #fff; border-color: var(--primary); box-shadow: var(--sh-primary); }
+        .page-item:not(.active):hover { background: var(--panel-hi); color: var(--text); border-color: rgba(255,255,255,0.1); }
+        .page-item.disabled { opacity: 0.5; pointer-events: none; }
+
 
         /* ── View Modes ────────────────────────────────────────── */
         .view-controls { display: flex; gap: 0.5rem; background: var(--panel); padding: 0.4rem; border-radius: 12px; border: 1px solid var(--border); margin-bottom: 1.5rem; width: fit-content; }
@@ -340,9 +376,13 @@ $users = $stmt->get_result();
                     <?php if ($can_edit && $canEditThisUser): ?>
                     <div class="user-actions">
                         <?php if ($canToggleThisUser): ?>
-                        <a href="usuarios.php?toggle_status=<?= $u['id'] ?>" class="btn <?= $u['ativo'] ? 'btn-ghost' : 'btn-primary' ?>" style="flex: 1; font-size: 0.75rem; padding: 0.6rem;">
-                            <?= $u['ativo'] ? 'Desativar' : 'Ativar' ?>
-                        </a>
+                        <form method="POST" action="usuarios.php" style="flex: 1; margin: 0; display: flex;">
+                            <input type="hidden" name="csrf_token" value="<?= csrf_token() ?>">
+                            <input type="hidden" name="toggle_status" value="<?= $u['id'] ?>">
+                            <button type="submit" class="btn <?= $u['ativo'] ? 'btn-ghost' : 'btn-primary' ?>" style="width: 100%; font-size: 0.75rem; padding: 0.6rem;">
+                                <?= $u['ativo'] ? 'Desativar' : 'Ativar' ?>
+                            </button>
+                        </form>
                         <?php endif; ?>
                         <a href="editar_usuario.php?id=<?= $u['id'] ?>" class="btn btn-ghost" style="padding: 0.6rem;">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
@@ -352,6 +392,39 @@ $users = $stmt->get_result();
                 </div>
                 <?php endwhile; ?>
             </div>
+
+            <!-- Navegação da Paginação (SPEC-09) -->
+            <?php if ($totalPages > 1): ?>
+            <div class="pagination animate-in" style="animation-delay: 0.2s;">
+                <?php if ($page > 1): ?>
+                    <a href="?page=<?= $page - 1 ?>" class="page-item"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg></a>
+                <?php else: ?>
+                    <div class="page-item disabled"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg></div>
+                <?php endif; ?>
+
+                <?php
+                // Range de até 5 páginas ex: [ 1 2 3 ... 10 ]
+                $startPage = max(1, $page - 2);
+                $endPage = min($totalPages, $page + 2);
+                
+                if ($startPage > 1) { echo '<a href="?page=1" class="page-item">1</a>'; if ($startPage > 2) echo '<div class="page-item disabled" style="border:none;background:transparent;">...</div>'; }
+                
+                for ($p = $startPage; $p <= $endPage; $p++) {
+                    $activeClass = ($p === $page) ? 'active' : '';
+                    echo "<a href='?page={$p}' class='page-item {$activeClass}'>{$p}</a>";
+                }
+                
+                if ($endPage < $totalPages) { if ($endPage < $totalPages - 1) echo '<div class="page-item disabled" style="border:none;background:transparent;">...</div>'; echo "<a href='?page={$totalPages}' class='page-item'>{$totalPages}</a>"; }
+                ?>
+
+                <?php if ($page < $totalPages): ?>
+                    <a href="?page=<?= $page + 1 ?>" class="page-item"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg></a>
+                <?php else: ?>
+                    <div class="page-item disabled"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg></div>
+                <?php endif; ?>
+            </div>
+            <?php endif; ?>
+
         </main>
     </div>
 

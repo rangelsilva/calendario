@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 /**
  * ═══════════════════════════════════════════════════════
  * PASCOM — Participant Management (v2.1)
@@ -16,12 +16,8 @@ if (!can('admin_sistema') && !can('editar_eventos')) {
 $id = (int)($_GET['id'] ?? 0);
 $pid = current_paroquia_id();
 
-// 1. Fetch Activity Details
-$sql = "SELECT * FROM atividades WHERE id = ? AND paroquia_id = ? LIMIT 1";
-$stmt = $conn->prepare($sql);
-$stmt->bind_param('ii', $id, $pid);
-$stmt->execute();
-$activity = $stmt->get_result()->fetch_assoc();
+$res = db_query($conn, "SELECT * FROM atividades WHERE id = ? AND paroquia_id = ? LIMIT 1", [$id, $pid]);
+$activity = $res ? $res->fetch_assoc() : null;
 
 if (!$activity) {
     header('Location: index.php?error=not_found');
@@ -30,6 +26,7 @@ if (!$activity) {
 
 // 2. Handle Assignment Action
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    require_csrf_token();
     $targetUserId = (int)($_POST['usuario_id'] ?? 0);
     $selectedItems = $_POST['items'] ?? [];
     $newCatalogId = (int)($_POST['add_catalog_id'] ?? 0);
@@ -38,27 +35,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $conn->begin_transaction();
         try {
             // Delete existing assignments for this event context
-            $conn->query("DELETE FROM inscricoes WHERE atividade_id = $id AND usuario_id = $targetUserId");
-            $conn->query("
+            db_execute($conn, "DELETE FROM inscricoes WHERE atividade_id = ? AND usuario_id = ?", [$id, $targetUserId]);
+            db_execute($conn, "
                 DELETE aei FROM atividade_evento_inscricoes aei
                 INNER JOIN atividade_evento_itens ei ON ei.id = aei.evento_item_id
-                WHERE ei.evento_id = $id AND aei.usuario_id = $targetUserId
-            ");
+                WHERE ei.evento_id = ? AND aei.usuario_id = ?
+            ", [$id, $targetUserId]);
             
             // If we are adding a NEW item from catalog
             if ($newCatalogId > 0) {
                 // Check if this catalog item is already in this event
-                $stCheck = $conn->prepare("SELECT id FROM atividade_evento_itens WHERE evento_id = ? AND atividade_catalogo_id = ? LIMIT 1");
-                $stCheck->bind_param('ii', $id, $newCatalogId);
-                $stCheck->execute();
-                $resCheck = $stCheck->get_result()->fetch_assoc();
+                $stCheck = db_query($conn, "SELECT id FROM atividade_evento_itens WHERE evento_id = ? AND atividade_catalogo_id = ? LIMIT 1", [$id, $newCatalogId]);
+                $resCheck = $stCheck ? $stCheck->fetch_assoc() : null;
                 
                 if ($resCheck) {
                     $itemId = $resCheck['id'];
                 } else {
-                    $stInsert = $conn->prepare("INSERT INTO atividade_evento_itens (evento_id, atividade_catalogo_id, ordem) SELECT ?, ?, IFNULL(MAX(ordem)+1, 1) FROM atividade_evento_itens WHERE evento_id = ?");
-                    $stInsert->bind_param('iii', $id, $newCatalogId, $id);
-                    $stInsert->execute();
+                    db_execute($conn, "INSERT INTO atividade_evento_itens (evento_id, atividade_catalogo_id, ordem) SELECT ?, ?, IFNULL(MAX(ordem)+1, 1) FROM atividade_evento_itens WHERE evento_id = ?", [$id, $newCatalogId, $id]);
                     $itemId = $conn->insert_id;
                 }
                 
@@ -69,16 +62,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             if (empty($selectedItems)) {
-                $st = $conn->prepare("INSERT INTO inscricoes (atividade_id, usuario_id) VALUES (?, ?)");
-                $st->bind_param('ii', $id, $targetUserId);
-                $st->execute();
+                db_execute($conn, "INSERT INTO inscricoes (atividade_id, usuario_id) VALUES (?, ?)", [$id, $targetUserId]);
             } else {
                 foreach ($selectedItems as $itemId) {
                     $itemId = (int)$itemId;
                     if ($itemId > 0) {
-                        $st = $conn->prepare("INSERT INTO atividade_evento_inscricoes (evento_item_id, usuario_id) VALUES (?, ?)");
-                        $st->bind_param('ii', $itemId, $targetUserId);
-                        $st->execute();
+                        db_execute($conn, "INSERT INTO atividade_evento_inscricoes (evento_item_id, usuario_id) VALUES (?, ?)", [$itemId, $targetUserId]);
                     }
                 }
             }
@@ -94,7 +83,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 // 2.2 Catalog for Assignment
-$catalog = $conn->query("SELECT id, nome FROM atividades_catalogo WHERE paroquia_id = $pid ORDER BY nome ASC")->fetch_all(MYSQLI_ASSOC);
+$catRes = db_query($conn, "SELECT id, nome FROM atividades_catalogo WHERE paroquia_id = ? ORDER BY nome ASC", [$pid]);
+$catalog = $catRes ? $catRes->fetch_all(MYSQLI_ASSOC) : [];
 
 // 3. Fetch Participants
 $participantsQuery = "
@@ -102,19 +92,20 @@ $participantsQuery = "
            (SELECT GROUP_CONCAT(evento_item_id) 
             FROM atividade_evento_inscricoes aei 
             INNER JOIN atividade_evento_itens ei ON ei.id = aei.evento_item_id
-            WHERE ei.evento_id = $id AND aei.usuario_id = u.id) as item_ids,
-           EXISTS(SELECT 1 FROM inscricoes WHERE atividade_id = $id AND usuario_id = u.id) as is_main
+            WHERE ei.evento_id = ? AND aei.usuario_id = u.id) as item_ids,
+           EXISTS(SELECT 1 FROM inscricoes WHERE atividade_id = ? AND usuario_id = u.id) as is_main
     FROM usuarios u
     WHERE u.id IN (
-        SELECT usuario_id FROM inscricoes WHERE atividade_id = $id
+        SELECT usuario_id FROM inscricoes WHERE atividade_id = ?
         UNION
         SELECT aei.usuario_id FROM atividade_evento_inscricoes aei
         INNER JOIN atividade_evento_itens ei ON ei.id = aei.evento_item_id
-        WHERE ei.evento_id = $id
+        WHERE ei.evento_id = ?
     )
     ORDER BY u.nome ASC
 ";
-$allRaw = $conn->query($participantsQuery)->fetch_all(MYSQLI_ASSOC);
+$allRawRes = db_query($conn, $participantsQuery, [$id, $id, $id, $id]);
+$allRaw = $allRawRes ? $allRawRes->fetch_all(MYSQLI_ASSOC) : [];
 $allParticipants = array_map(function($p) {
     $p['assigned_ids'] = $p['item_ids'] ? explode(',', $p['item_ids']) : [];
     return $p;
@@ -195,6 +186,7 @@ $eventItems = getEventActivityItems($conn, $id);
                             </td>
                             <td>
                                 <form method="POST" id="form_<?= $p['id'] ?>">
+                                    <input type="hidden" name="csrf_token" value="<?= csrf_token() ?>">
                                     <input type="hidden" name="usuario_id" value="<?= $p['id'] ?>">
                                     <div class="assignment-chips">
                                         <?php if (empty($p['assigned_ids'])): ?>

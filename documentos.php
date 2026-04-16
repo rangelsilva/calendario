@@ -84,7 +84,7 @@ if (!can('admin_sistema') && !can('ver_logs')) {
                             <option value="" style="color: #000;">Todas as categorias</option>
                             <?php
                                 $pid = current_paroquia_id();
-                                $tipos_r = $conn->query("SELECT * FROM tipos_atividade WHERE paroquia_id = $pid ORDER BY nome_tipo");
+                                $tipos_r = db_query($conn, "SELECT * FROM tipos_atividade WHERE paroquia_id = ? ORDER BY nome_tipo", [$pid]);
                                 if ($tipos_r) while ($tr = $tipos_r->fetch_assoc()) {
                                     echo '<option value="' . $tr["id"] . '" style="color: #000;">' . h($tr["nome_tipo"]) . '</option>';
                                 }
